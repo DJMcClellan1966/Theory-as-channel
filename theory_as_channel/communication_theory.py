@@ -34,6 +34,7 @@ class ErrorCorrectingPredictions:
         self,
         predictions: np.ndarray,
         method: str = "majority_vote",
+        weights: Optional[List[float]] = None,
     ) -> np.ndarray:
         """
         Correct predictions using redundancy
@@ -41,27 +42,85 @@ class ErrorCorrectingPredictions:
         Args:
             predictions: Array of shape (n_samples, redundancy_factor)
             method: 'majority_vote', 'median', 'mean'
+            weights: Optional per-channel weights (length = redundancy_factor).
+                     For majority_vote, higher weight = more influence (e.g. validation accuracy).
 
         Returns:
             Corrected predictions
         """
         if method == "majority_vote":
-            # Majority vote for classification
+            if weights is not None:
+                return self._weighted_majority_vote(predictions, np.asarray(weights))
+            # Unweighted majority vote for classification
             from scipy.stats import mode
-
             corrected, _ = mode(predictions, axis=1)
             return corrected.flatten()
 
         elif method == "median":
-            # Median for regression
+            if weights is not None:
+                # Weighted median: treat as regression, weight each prediction
+                w = np.asarray(weights)
+                return np.array([
+                    self._weighted_median(predictions[i], w) for i in range(predictions.shape[0])
+                ])
             return np.median(predictions, axis=1)
 
         elif method == "mean":
-            # Mean for regression
+            if weights is not None:
+                w = np.asarray(weights) / np.sum(weights)
+                return (predictions.astype(float) * w).sum(axis=1)
             return np.mean(predictions, axis=1)
 
         else:
             raise ValueError(f"Unknown method: {method}")
+
+    def _weighted_majority_vote(self, predictions: np.ndarray, weights: np.ndarray) -> np.ndarray:
+        """Per-sample: for each class, sum weights of models that predicted that class; return argmax."""
+        n_samples = predictions.shape[0]
+        classes = np.unique(predictions)
+        if weights.shape[0] != predictions.shape[1]:
+            weights = np.broadcast_to(weights, (predictions.shape[1],))
+        out = np.zeros(n_samples, dtype=predictions.dtype)
+        for i in range(n_samples):
+            best_score = -np.inf
+            for c in classes:
+                score = np.sum(weights[predictions[i] == c])
+                if score > best_score:
+                    best_score = score
+                    out[i] = c
+        return out
+
+    def _weighted_median(self, values: np.ndarray, weights: np.ndarray) -> float:
+        """Weighted median (for regression)."""
+        order = np.argsort(values)
+        w = weights[order]
+        wcum = np.cumsum(w)
+        idx = np.searchsorted(wcum, 0.5 * wcum[-1])
+        return values[order[idx]]
+
+    def correct_predictions_soft(
+        self,
+        probas: np.ndarray,
+        weights: Optional[List[float]] = None,
+    ) -> np.ndarray:
+        """
+        Soft voting: average class probabilities across channels, then argmax.
+        (ML-Toolbox style: VotingClassifier with voting='soft'.)
+
+        Args:
+            probas: Shape (n_samples, n_models, n_classes). predict_proba from each model.
+            weights: Optional per-model weights (length = n_models).
+
+        Returns:
+            Predicted class indices, shape (n_samples,).
+        """
+        if weights is not None:
+            w = np.asarray(weights, dtype=float)
+            w = w / w.sum()
+            avg = np.tensordot(probas, w, axes=(1, 0))
+        else:
+            avg = np.mean(probas, axis=1)
+        return np.argmax(avg, axis=1)
 
     def robust_predict(
         self,

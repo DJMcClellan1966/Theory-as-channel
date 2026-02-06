@@ -23,6 +23,16 @@ from .information_theory import (
     KLDivergence,
     InformationGain,
 )
+from .ensemble_extras import (
+    entropy_weighted_soft_weights,
+    capacity_weighted_weights,
+    soft_vote_median,
+    soft_vote_trimmed_mean,
+    diversity_weighted_weights,
+    SimpleStackingEnsemble,
+    build_meta_features_from_probas,
+    build_meta_features_from_predictions,
+)
 
 __all__ = [
     "ErrorCorrectingPredictions",
@@ -38,4 +48,12 @@ __all__ = [
     "MutualInformation",
     "KLDivergence",
     "InformationGain",
+    "entropy_weighted_soft_weights",
+    "capacity_weighted_weights",
+    "soft_vote_median",
+    "soft_vote_trimmed_mean",
+    "diversity_weighted_weights",
+    "SimpleStackingEnsemble",
+    "build_meta_features_from_probas",
+    "build_meta_features_from_predictions",
 ]
